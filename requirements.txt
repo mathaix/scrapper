@@ -3,7 +3,6 @@ uvicorn
 python-multipart
 httpx
 supabase
-anthropic
 pydantic
 modal
 pytest

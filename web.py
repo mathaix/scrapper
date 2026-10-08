@@ -1,11 +1,10 @@
 """Web app: scrape one company or a batch of domains; results go to the database."""
 import csv
-import hmac
 import io
 import logging
 import uuid
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -23,7 +22,6 @@ body{font:15px system-ui,sans-serif;max-width:60rem;margin:2rem auto;padding:0 1
 table{border-collapse:collapse;width:100%} td,th{border:1px solid #ccc;padding:.3rem;text-align:left}
 </style>
 <h1>Web scraper</h1>
-<p><label>API token <input id="token" type="password" size="40"></label></p>
 <h2>Single company</h2>
 <form id="f"><input id="url" name="url" placeholder="claramap.com or https://example.com" size="50">
 <button id="go">Scrape</button></form>
@@ -35,13 +33,10 @@ table{border-collapse:collapse;width:100%} td,th{border:1px solid #ccc;padding:.
 <button id="batch-go">Scrape batch</button></form>
 <p id="batch-status"></p>
 <table id="batch-table" hidden><thead><tr><th>Domain</th><th>Status</th><th>Name</th><th>Tech</th>
-<th>Hiring</th><th>Latest post</th><th>Industry</th></tr></thead><tbody></tbody></table>
+<th>Hiring</th><th>Latest post</th></tr></thead><tbody></tbody></table>
 <script>
 const $ = (id) => document.getElementById(id);
-const token = $('token');
-token.value = localStorage.getItem('token') || '';
-token.oninput = () => localStorage.setItem('token', token.value);
-const headers = () => ({'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token.value});
+const headers = () => ({'Content-Type': 'application/json'});
 function el(tag, text, cls, parent) {
   const e = document.createElement(tag);
   if (text != null) e.textContent = text;
@@ -53,7 +48,7 @@ async function call(path, opts) {
   const r = await fetch(path, opts);
   let d = {};
   try { d = await r.json(); } catch (e) {}
-  if (!r.ok) throw new Error(r.status === 401 ? 'Missing or invalid API token' : (d.detail || 'Request failed'));
+  if (!r.ok) throw new Error(d.detail || 'Request failed');
   return d;
 }
 function renderResult(d) {
@@ -70,8 +65,6 @@ function renderResult(d) {
   if (!(s.tech || []).length) t.append('none detected');
   el('p', 'Hiring: ' + (h.careers_url ? `${h.careers_url} (ATS: ${h.ats || 'unknown'}, open roles: ${h.open_roles ?? 'n/a'})` : 'no careers page found'), null, box);
   el('p', 'Activity: ' + (a.source ? `latest post ${a.latest_post_date}, ${a.posts_last_90d} in last 90 days (${a.source})` : 'no blog activity found'), null, box);
-  const ai = s.ai;
-  el('p', 'AI summary: ' + (ai ? `${ai.industry} · ${ai.b2b_or_b2c} · ${ai.size_estimate} · ${ai.icp_summary}` : 'not available'), null, box);
   box.hidden = false;
 }
 $('f').onsubmit = async (e) => {
@@ -98,7 +91,6 @@ function renderRows(rows) {
     const h = s.hiring || {};
     el('td', h.open_roles != null ? h.open_roles + ' roles' : (h.careers_url ? 'careers page' : ''), null, tr);
     el('td', (s.activity || {}).latest_post_date || '', null, tr);
-    el('td', (s.ai || {}).industry || '', null, tr);
   });
   $('batch-table').hidden = false;
 }
@@ -145,22 +137,17 @@ def parse_items(req: BatchRequest) -> list:
     return items
 
 
-def create_app(scrape, save, *, token=None, spawn=None, queue_batch=None, get_batch=None) -> FastAPI:
-    """scrape(url) -> record; save(record); token: required bearer token (None rejects everything);
+def create_app(scrape, save, *, spawn=None, queue_batch=None, get_batch=None) -> FastAPI:
+    """scrape(url) -> record; save(record);
     spawn(batch_id, [(row_id, url)]), queue_batch(batch_id, urls) -> [{id, url}] and
     get_batch(batch_id) -> rows implement batch processing."""
     app = FastAPI()
-
-    def auth(authorization: str | None = Header(None)):
-        expected = f"Bearer {token}" if token else None
-        if not expected or not authorization or not hmac.compare_digest(authorization.encode(), expected.encode()):
-            raise HTTPException(401, "Missing or invalid API token", headers={"WWW-Authenticate": "Bearer"})
 
     @app.get("/", response_class=HTMLResponse)
     def index():
         return PAGE
 
-    @app.post("/scrape", dependencies=[Depends(auth)])
+    @app.post("/scrape")
     def do_scrape(req: ScrapeRequest):
         try:
             record = scrape(normalize_input(req.url))
@@ -176,7 +163,7 @@ def create_app(scrape, save, *, token=None, spawn=None, queue_batch=None, get_ba
             raise HTTPException(500, "Something went wrong on our side")
         return record
 
-    @app.post("/batch", dependencies=[Depends(auth)])
+    @app.post("/batch")
     def do_batch(req: BatchRequest):
         if not (spawn and queue_batch):
             raise HTTPException(503, "Batch processing isn't configured")
@@ -197,7 +184,7 @@ def create_app(scrape, save, *, token=None, spawn=None, queue_batch=None, get_ba
             raise HTTPException(500, "Something went wrong on our side")
         return {"batch_id": batch_id, "total": len(urls)}
 
-    @app.get("/batch/{batch_id}", dependencies=[Depends(auth)])
+    @app.get("/batch/{batch_id}")
     def batch_status(batch_id: str):
         try:
             uuid.UUID(batch_id)

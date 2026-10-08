@@ -6,7 +6,6 @@ from datetime import date, timedelta
 import httpx
 import pytest
 
-from ai import classify_with_claude
 from fetch import Fetcher
 from scraper import scrape
 
@@ -71,13 +70,8 @@ def make_fetcher():
     return Fetcher(allow_private=True, transport=Router())
 
 
-FAKE_AI = {"industry": "Manufacturing", "services": ["anvils"], "icp_summary": "Coyotes", "b2b_or_b2c": "b2c",
-           "size_estimate": "11-50", "confidence": 0.9}
-
-
 def test_fixture_site_signals(fixture_site):
-    seen = []
-    r = scrape(fixture_site + "/", classify=lambda text: seen.append(text) or FAKE_AI, fetcher=make_fetcher())
+    r = scrape(fixture_site + "/", fetcher=make_fetcher())
     assert r["signals"] == {
         "profile": {
             "name": "Acme Corp",
@@ -91,19 +85,7 @@ def test_fixture_site_signals(fixture_site):
         "tech": ["google-analytics", "hubspot"],
         "hiring": {"careers_url": "https://boards.greenhouse.io/acme", "ats": "greenhouse", "open_roles": 3},
         "activity": {"latest_post_date": RECENT[0], "posts_last_90d": 2, "source": "sitemap"},
-        "ai": FAKE_AI,
     }
-    assert "Anvils for everyone" in seen[0] and "Acme makes anvils" in seen[0]
-
-
-def test_ai_failure_and_missing_key(fixture_site, monkeypatch):
-    def broken(text):
-        raise RuntimeError("api down")
-
-    assert scrape(fixture_site + "/", classify=broken, fetcher=make_fetcher())["signals"]["ai"] is None
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    r = scrape(fixture_site + "/", classify=classify_with_claude, fetcher=make_fetcher())
-    assert r["signals"]["ai"] is None and r["signals"]["profile"]["name"] == "Acme Corp"
 
 
 def test_rss_fallback_and_lever_page():

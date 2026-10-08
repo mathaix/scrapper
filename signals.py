@@ -295,22 +295,10 @@ def activity(fetcher, page, final_url, today):
     }
 
 
-def ai_text(page, limit=20000):
-    parts = [page.title, page.meta.get("description", ""), *page.headings, " ".join(" ".join(page.text).split())]
-    return "\n".join(p for p in parts if p)[:limit]
-
-
-def collect(fetcher, page, final_url, parse, classify=None, today=None):
-    ai = None
-    if classify:
-        try:
-            ai = classify(ai_text(page))
-        except Exception:
-            log.exception("AI classifier failed")
+def collect(fetcher, page, final_url, parse, today=None):
     return {
         "profile": profile(page, final_url),
         "tech": tech(page),
         "hiring": hiring(fetcher, page, parse),
         "activity": activity(fetcher, page, final_url, today or date.today()),
-        "ai": ai,
     }
