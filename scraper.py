@@ -24,13 +24,13 @@ def normalize_input(raw: str) -> str:
     return url
 
 
-def scrape(url: str, classify=None, fetcher=None, allow_private=False) -> dict:
+def scrape(url: str, fetcher=None, allow_private=False) -> dict:
     owns = fetcher is None
     fetcher = fetcher or Fetcher(allow_private=allow_private)
     try:
         final, html, _ = fetcher.fetch(url)
         page = parse(html, final)
-        signals = collect(fetcher, page, final, parse, classify)
+        signals = collect(fetcher, page, final, parse)
     finally:
         if owns:
             fetcher.close()
