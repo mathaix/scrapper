@@ -1,7 +1,36 @@
-# Web scraper – marketing signals
+# Signals
 
-Scrapes a company site (or a batch of domains) into profile, socials, tech stack, hiring and
-activity signals, and stores one snapshot row per scrape in Supabase.
+Signals is a rules-based collector of marketing signals. You send it company websites or event pages, and it
+builds a queryable Supabase database of companies, people and events. That data feeds target lists, timing
+triggers and event-led outreach.
+
+**Live app: https://claramap--signals.modal.run** (public, no login: anyone with the URL can use it).
+
+## What it captures
+
+Available today:
+
+- Company profile and social links
+- Tech stack (marketing, analytics and CMS tools detected from page markup)
+- Hiring: ATS (Greenhouse, Lever, Ashby) and open roles
+- Blog activity (latest post dates from sitemap or feed)
+
+Planned (not built yet; see the linked issues):
+
+- Events, funding, earnings and press signals on a company ([#6](https://github.com/mathaix/signals/issues/6)–[#13](https://github.com/mathaix/signals/issues/13))
+- Sponsors, exhibitors and speakers extracted from event pages ([#6](https://github.com/mathaix/signals/issues/6)–[#13](https://github.com/mathaix/signals/issues/13))
+
+## How it works
+
+URL → rules-based extraction (no AI) → Supabase. Each scrape stores one snapshot row; batches of up to 500
+URLs run as background jobs. The app is deployed on Modal, and merging to `main` deploys it.
+
+## Docs
+
+- [Product requirements](docs/prd-signals-db.md)
+- [Final design](docs/designs/final.md)
+- [Research](docs/research-signals-practice.md)
+- [AGENTS.md](AGENTS.md) (how to work on issues in this repo)
 
 ## Setup
 
