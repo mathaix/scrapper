@@ -32,4 +32,8 @@ The web page at `/` does the same. The endpoint is unauthenticated: anyone with 
 
 ## Tests
 
-`pip install -r requirements.txt && python -m playwright install chromium && python -m pytest`
+`pip install -r requirements-dev.txt && python -m playwright install chromium && python -m pytest`
+
+Schema tests need a Postgres 15+ and `TEST_DATABASE_URL` (they run in a throwaway `signals_test` schema), e.g.
+`docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pw postgres:17` and
+`TEST_DATABASE_URL=postgresql://postgres:pw@localhost:5432/postgres`. Without it they are skipped.
