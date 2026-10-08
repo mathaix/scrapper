@@ -9,7 +9,7 @@ image = (
     .pip_install("fastapi[standard]", "httpx", "supabase")
     .add_local_python_source("scraper", "storage", "web", "fetch", "htmlparse", "signals", "jobs")
 )
-app = modal.App("webscraper", image=image)
+app = modal.App("signals", image=image)
 supabase = modal.Secret.from_name("supabase")
 
 
@@ -23,7 +23,7 @@ def scrape_and_save(url: str, batch_id: str | None = None, row_id: int | None = 
 
 
 @app.function(secrets=[supabase])
-@modal.asgi_app()
+@modal.asgi_app(label="signals")
 def web():
     from scraper import scrape
     from storage import get_batch, queue_batch, save_to_supabase

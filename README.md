@@ -16,15 +16,15 @@ Merging to the default branch deploys with `modal deploy modal_app.py`.
 
 ```sh
 # single company (bare domains are fine)
-curl -X POST https://mmathew--webscraper-web.modal.run/scrape \
+curl -X POST https://claramap--signals.modal.run/scrape \
   -H 'Content-Type: application/json' -d '{"url": "claramap.com"}'
 
 # batch: up to 500 domains/URLs ("urls" list, or "text" with one per line / CSV first column)
-curl -X POST https://mmathew--webscraper-web.modal.run/batch \
+curl -X POST https://claramap--signals.modal.run/batch \
   -H 'Content-Type: application/json' \
   -d '{"text": "claramap.com\nexample.org"}'            # -> {"batch_id": "...", "total": 2}
 
-curl https://mmathew--webscraper-web.modal.run/batch/<batch_id>
+curl https://claramap--signals.modal.run/batch/<batch_id>
 # -> {"counts": {"queued": 0, "ok": 2, "error": 0}, "rows": [...]}
 ```
 

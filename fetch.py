@@ -13,7 +13,7 @@ from urllib.robotparser import RobotFileParser
 
 import httpx
 
-USER_AGENT = "SignalsBot/1.0 (+https://mmathew--webscraper-web.modal.run)"
+USER_AGENT = "SignalsBot/1.0 (+https://claramap--signals.modal.run)"
 MAX_BYTES = 5 * 1024 * 1024
 MAX_REDIRECTS = 5
 MAX_REQUESTS = 6
