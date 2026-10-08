@@ -1,39 +1,47 @@
-"""Scrape a webpage: title and links (as in Modal's webscraper example)."""
-from html.parser import HTMLParser
-from urllib.parse import urljoin, urlparse
+"""Scrape a company website: title, links and marketing signals."""
+from urllib.parse import urlparse
 
-import httpx
-
-
-class _Parser(HTMLParser):
-    def __init__(self, base):
-        super().__init__()
-        self.base, self.links, self.title, self._in_title = base, [], "", False
-
-    def handle_starttag(self, tag, attrs):
-        if tag == "title":
-            self._in_title = True
-        elif tag == "a":
-            href = dict(attrs).get("href")
-            if href:
-                url = urljoin(self.base, href)
-                if urlparse(url).scheme in ("http", "https") and url not in self.links:
-                    self.links.append(url)
-
-    def handle_endtag(self, tag):
-        if tag == "title":
-            self._in_title = False
-
-    def handle_data(self, data):
-        if self._in_title:
-            self.title += data
+from fetch import Fetcher, FetchError
+from htmlparse import normalize as _normalize, parse
+from signals import collect
 
 
-def scrape(url: str) -> dict:
-    if urlparse(url).scheme not in ("http", "https"):
-        raise ValueError("URL must start with http:// or https://")
-    resp = httpx.get(url, follow_redirects=True, timeout=20)
-    resp.raise_for_status()
-    parser = _Parser(str(resp.url))
-    parser.feed(resp.text)
-    return {"url": url, "title": parser.title.strip(), "links": parser.links}
+def domain_of(url: str) -> str:
+    return (urlparse(url).hostname or "").lower().removeprefix("www.")
+
+
+def normalize_input(raw: str) -> str:
+    """Accept bare domains ('claramap.com') as well as full URLs."""
+    raw = raw.strip()
+    url = raw if "://" in raw else "https://" + raw
+    try:
+        p = urlparse(url)
+        ok = p.scheme in ("http", "https") and p.hostname and not any(c.isspace() for c in raw)
+    except ValueError:
+        ok = False
+    if not ok:
+        raise ValueError(f"Invalid domain or URL: {raw[:100]!r}")
+    return url
+
+
+def scrape(url: str, classify=None, fetcher=None, allow_private=False) -> dict:
+    owns = fetcher is None
+    fetcher = fetcher or Fetcher(allow_private=allow_private)
+    try:
+        final, html, _ = fetcher.fetch(url)
+        page = parse(html, final)
+        signals = collect(fetcher, page, final, parse, classify)
+    finally:
+        if owns:
+            fetcher.close()
+    return {
+        "url": url,
+        "domain": domain_of(final),
+        "title": page.title,
+        "links": page.links,
+        "signals": signals,
+        "status": "ok",
+    }
+
+
+__all__ = ["scrape", "normalize_input", "domain_of", "FetchError", "_normalize"]
