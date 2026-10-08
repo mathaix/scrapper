@@ -1,6 +1,7 @@
 """Schema v2 smoke test: applies schema.sql twice, loads the design seed, runs Q1-Q8 (+Q5b).
 
-Needs a Postgres >= 15 reachable through DATABASE_URL; skipped otherwise.
+Needs a Postgres >= 15 reachable through TEST_DATABASE_URL; skipped otherwise. Everything runs inside a
+throwaway `signals_test` schema, so pointing it at a real database never touches the real tables.
 """
 import os
 from pathlib import Path
@@ -9,15 +10,13 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
-pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="DATABASE_URL not set")
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
+pytestmark = pytest.mark.skipif(not TEST_DATABASE_URL, reason="TEST_DATABASE_URL not set")
 
 SCHEMA = (Path(__file__).resolve().parent.parent / "schema.sql").read_text()
 
-DROP_ALL = """
-drop view if exists companies_current, company_history, tech_seen;
-drop table if exists appearances, people, scrapes, events, companies, scraped_pages cascade;
-"""
+TEST_SCHEMA = "signals_test"
+RESET = f"drop schema if exists {TEST_SCHEMA} cascade; create schema {TEST_SCHEMA};"
 
 SEED = """
 insert into companies (id, domain, name, tech_ignore) overriding system value values
@@ -161,10 +160,10 @@ order by s.id
 
 @pytest.fixture
 def conn():
-    with psycopg.connect(DATABASE_URL, autocommit=True) as c:
-        c.execute(DROP_ALL)
+    with psycopg.connect(TEST_DATABASE_URL, autocommit=True, options=f"-c search_path={TEST_SCHEMA}") as c:
+        c.execute(RESET)
         yield c
-        c.execute(DROP_ALL)
+        c.execute(f"drop schema if exists {TEST_SCHEMA} cascade")
 
 
 @pytest.fixture
@@ -259,3 +258,40 @@ def test_appearance_upsert_is_idempotent(seeded):
         values (1, 1, 'sponsor', 6)
         on conflict (event_id, company_id, person_id, role) do update set last_seen_at = now()""")
     assert rows(seeded, "select count(*) from appearances") == before
+
+
+def test_tech_arrays_keep_scan_order(seeded):
+    seeded.execute("""insert into companies (id, domain, tech_ignore) overriding system value values (5, 'order.com', '{mid}');
+        insert into scrapes (id, url, kind, status, company_id, scraped_at, tech) overriding system value values
+          (40, 'https://order.com', 'company', 'ok', 5, now() - interval '2 days', '{zeta,mid,alpha}'),
+          (41, 'https://order.com', 'company', 'ok', 5, now(), '{zeta,beta,alpha,gamma}')""")
+    assert rows(seeded, "select tech from companies_current where id = 5") == [(["zeta", "beta", "alpha", "gamma"],)]
+    assert rows(seeded, "select tech_added from company_history where company_id = 5 and tech_added is not null") == \
+        [(["beta", "gamma"],)]
+
+
+def test_adopted_breaks_timestamp_ties_by_id(seeded):
+    seeded.execute("""insert into companies (id, domain) overriding system value values (5, 'tie.com');
+        insert into scrapes (id, url, kind, status, company_id, scraped_at, tech) overriding system value values
+          (20, 'https://tie.com', 'company', 'ok', 5, '2026-01-01', '{wordpress}'),
+          (21, 'https://tie.com', 'company', 'ok', 5, '2026-01-01', '{wordpress,hubspot}')""")
+    assert rows(seeded, "select tool, adopted from tech_seen where company_id = 5 order by tool") == \
+        [("hubspot", True), ("wordpress", False)]
+    assert rows(seeded, "select tech_added from company_history where scrape_id = 21") == [(["hubspot"],)]
+
+
+def test_merge_company_moves_rows_to_kept_company(seeded):
+    seeded.execute("""insert into companies (id, domain, name) overriding system value values (5, 'initech.io', 'Initech');
+        insert into scrapes (id, url, kind, status, company_id, scraped_at, tech) overriding system value values
+          (30, 'https://initech.io', 'company', 'ok', 5, now(), '{salesforce}');
+        insert into appearances (event_id, company_id, role, evidence) values
+          (1, 5, 'sponsor', 'duplicate of the initech.com row'),
+          (1, 5, 'exhibitor', 'only on the duplicate');
+        select merge_company(5, 3)""")
+    assert rows(seeded, "select count(*) from appearances where company_id = 5") == [(0,)]
+    assert rows(seeded, "select role from appearances where company_id = 3 and event_id = 1 order by role") == \
+        [("exhibitor",), ("sponsor",)]
+    assert rows(seeded, "select tech from companies_current where id = 3") == [(["salesforce"],)]
+    assert rows(seeded, "select merged_into from companies where id = 5") == [(3,)]
+    with pytest.raises(psycopg.errors.RaiseException):
+        seeded.execute("select merge_company(3, 3)")

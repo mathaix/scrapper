@@ -7,4 +7,3 @@ pydantic
 modal
 pytest
 playwright
-psycopg[binary]

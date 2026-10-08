@@ -82,8 +82,6 @@ create table if not exists scrapes (
   constraint scrapes_one_subject check (company_id is null or event_id is null)
 );
 
-alter table scrapes add column if not exists raw_path text;
-
 do $$ begin
   alter table events add constraint events_last_scrape_fk foreign key (last_scrape_id) references scrapes(id) on delete set null;
 exception when duplicate_object then null; end $$;
@@ -133,6 +131,27 @@ drop view if exists companies_current;
 drop view if exists company_history;
 drop view if exists tech_seen;
 
+-- a minus b, keeping a's order (EXCEPT has no defined output order).
+create or replace function array_minus(a text[], b text[]) returns text[] language sql immutable as $$
+  select array(select t from unnest(a) with ordinality as u(t, o) where not (t = any(coalesce(b, '{}'))) order by o)
+$$;
+
+-- Owner merge: move everything from the duplicate onto the kept company, then mark the duplicate.
+-- Without this, rows still pointing at the duplicate would vanish from every query that joins companies_current.
+create or replace function merge_company(dup bigint, keep bigint) returns void language plpgsql as $$
+begin
+  if dup = keep then raise exception 'cannot merge a company into itself'; end if;
+  -- the same fact already recorded for the kept company wins
+  delete from appearances a where a.company_id = dup and exists (
+    select 1 from appearances k where k.event_id = a.event_id and k.company_id = keep and k.role = a.role);
+  update appearances set company_id = keep where company_id = dup;
+  update appearances set person_company_id = keep where person_company_id = dup;
+  update people set company_id = keep where company_id = dup;
+  update scrapes set company_id = keep where company_id = dup;
+  update companies set merged_into = keep where merged_into = dup;  -- earlier duplicates follow along
+  update companies set merged_into = keep where id = dup;
+end $$;
+
 -- One row per (unmerged) company. Profile from the latest ok scrape; tech and hiring from the latest ok scrape
 -- where that reading was known, so one failed ATS call or tech scan never blanks the current row.
 create view companies_current with (security_invoker = true) as
@@ -141,7 +160,7 @@ select c.id, c.domain,
        p.description, p.logo_url, p.linkedin_url, p.x_url, p.github_url,
        p.facebook_url, p.instagram_url, p.youtube_url,
        c.first_seen_at, c.last_scraped_at, p.id as scrape_id,
-       case when t.tech is not null then array(select unnest(t.tech) except select unnest(c.tech_ignore)) end as tech,
+       case when t.tech is not null then array_minus(t.tech, c.tech_ignore) end as tech,
        h.ats, h.careers_url, h.open_roles, h.scraped_at as hiring_as_of,
        p.latest_post_date, p.posts_last_90d
 from companies c
@@ -159,18 +178,18 @@ where c.merged_into is null;
 create view company_history with (security_invoker = true) as
 select h.*,
        case when h.tech is not null and h.prev_tech is not null
-            then array(select unnest(h.tech) except select unnest(h.prev_tech)) end as tech_added,
+            then array_minus(h.tech, h.prev_tech) end as tech_added,
        case when h.tech is not null and h.prev_tech is not null
-            then array(select unnest(h.prev_tech) except select unnest(h.tech)) end as tech_removed
+            then array_minus(h.prev_tech, h.tech) end as tech_removed
 from (
   select s.company_id, s.id as scrape_id, s.scraped_at, s.url,
          (select p.name from scrapes p where p.company_id = s.company_id and p.status = 'ok' and p.name is not null
              and (p.scraped_at, p.id) < (s.scraped_at, s.id) order by p.scraped_at desc, p.id desc limit 1) as prev_name,
          s.name, s.description,
-         (select array(select unnest(p.tech) except select unnest(c.tech_ignore))
+         (select array_minus(p.tech, c.tech_ignore)
             from scrapes p where p.company_id = s.company_id and p.status = 'ok' and p.tech is not null
              and (p.scraped_at, p.id) < (s.scraped_at, s.id) order by p.scraped_at desc, p.id desc limit 1) as prev_tech,
-         case when s.tech is not null then array(select unnest(s.tech) except select unnest(c.tech_ignore)) end as tech,
+         case when s.tech is not null then array_minus(s.tech, c.tech_ignore) end as tech,
          (select p.ats from scrapes p where p.company_id = s.company_id and p.status = 'ok' and p.ats is not null
              and (p.scraped_at, p.id) < (s.scraped_at, s.id) order by p.scraped_at desc, p.id desc limit 1) as prev_ats,
          s.ats,
@@ -184,18 +203,21 @@ from (
 -- One row per (company, tool) from known tech readings. adopted = an earlier ok scrape with a KNOWN tech
 -- reading lacked the tool, i.e. we witnessed the change rather than seeing it on our first look.
 create view tech_seen with (security_invoker = true) as
-with seen as (
-  select s.company_id, t.tool, min(s.scraped_at) as first_seen_at, max(s.scraped_at) as last_seen_at
+with obs as (
+  select s.company_id, t.tool, s.scraped_at, s.id
   from scrapes s
   join companies c on c.id = s.company_id
   cross join lateral unnest(s.tech) as t(tool)
   where s.status = 'ok' and s.tech is not null and not (t.tool = any(c.tech_ignore))
-  group by s.company_id, t.tool
+), first_obs as (
+  select distinct on (company_id, tool) company_id, tool, scraped_at, id
+  from obs order by company_id, tool, scraped_at, id
 )
-select seen.company_id, seen.tool, seen.first_seen_at, seen.last_seen_at,
+select o.company_id, o.tool, min(o.scraped_at) as first_seen_at, max(o.scraped_at) as last_seen_at,
        exists (select 1 from scrapes p
-               where p.company_id = seen.company_id and p.status = 'ok' and p.tech is not null
-                 and not (seen.tool = any(p.tech)) and p.scraped_at < seen.first_seen_at) as adopted
-from seen;
+               where p.company_id = f.company_id and p.status = 'ok' and p.tech is not null
+                 and not (f.tool = any(p.tech)) and (p.scraped_at, p.id) < (f.scraped_at, f.id)) as adopted
+from obs o join first_obs f using (company_id, tool)
+group by o.company_id, o.tool, f.company_id, f.tool, f.scraped_at, f.id;
 
 drop table if exists scraped_pages;  -- held only test rows (PRD §7)
