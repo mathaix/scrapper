@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="120" viewBox="0 0 480 120" role="img" aria-labelledby="t">
+  <title id="t">Signals</title>
+  <rect width="480" height="120" rx="16" fill="#0f172a"/>
+  <g fill="none" stroke="#38bdf8" stroke-width="6" stroke-linecap="round">
+    <path d="M36 60h14l10-28 16 56 14-44 8 16h14"/>
+  </g>
+  <circle cx="112" cy="60" r="5" fill="#38bdf8"/>
+  <text x="150" y="74" font-family="Helvetica, Arial, sans-serif" font-size="44" font-weight="700" fill="#f8fafc">Signals</text>
+</svg>
