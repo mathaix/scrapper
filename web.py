@@ -15,18 +15,44 @@ log = logging.getLogger(__name__)
 MAX_BATCH = 500
 
 PAGE = """<!doctype html><meta charset="utf-8"><title>Scraper</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-body{font:15px system-ui,sans-serif;max-width:60rem;margin:2rem auto;padding:0 1rem}
-.chip{display:inline-block;background:#e8f0fe;border-radius:1rem;padding:.1rem .6rem;margin:.1rem}
-#result{border:1px solid #ccc;border-radius:.5rem;padding:0 1rem;margin:1rem 0}
-table{border-collapse:collapse;width:100%} td,th{border:1px solid #ccc;padding:.3rem;text-align:left}
+:root{--ink:#1f2340;--muted:#667;--accent:#5b5bf0;--accent2:#9b5cf6;--line:#e3e6f3}
+*{box-sizing:border-box}
+body{font:15px/1.5 system-ui,sans-serif;margin:0;color:var(--ink);background:#f5f6fc}
+.hero{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:3rem 1rem 4.5rem;text-align:center}
+.hero h1{margin:0;font-size:2.4rem;letter-spacing:-.02em}
+.hero p{margin:.5rem auto 0;max-width:36rem;opacity:.9;font-size:1.05rem}
+main{max-width:60rem;margin:-3rem auto 3rem;padding:0 1rem}
+.card{background:#fff;border:1px solid var(--line);border-radius:1rem;padding:1.25rem 1.5rem;margin-bottom:1.25rem;box-shadow:0 6px 24px rgba(40,40,120,.08)}
+.card h2{margin:0 0 .75rem;font-size:1.15rem}
+input,textarea{font:inherit;border:1px solid var(--line);border-radius:.6rem;padding:.55rem .75rem;max-width:100%}
+input:focus,textarea:focus{outline:2px solid var(--accent);border-color:transparent}
+textarea{width:100%}
+button{font:inherit;font-weight:600;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));border:0;border-radius:.6rem;padding:.55rem 1.1rem;cursor:pointer;transition:transform .1s,box-shadow .1s}
+button:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(91,91,240,.4)}
+#url{width:min(100%,28rem)}
+label{color:var(--muted);display:inline-block;margin:.5rem 0}
+p#status,p#batch-status{color:var(--muted);min-height:1.2em}
+.chip{display:inline-block;background:#eceaff;color:#4338ca;border-radius:1rem;padding:.1rem .7rem;margin:.1rem;font-size:.85rem;font-weight:500}
+#result{border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:.6rem;padding:0 1rem;margin:1rem 0;background:#fafaff}
+table{border-collapse:separate;border-spacing:0;width:100%;overflow:hidden;border:1px solid var(--line);border-radius:.6rem}
+td,th{padding:.5rem .7rem;text-align:left;border-bottom:1px solid var(--line)}
+th{background:#eceaff;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+tbody tr:nth-child(even){background:#fafaff} tbody tr:last-child td{border-bottom:0}
+a{color:var(--accent)}
 </style>
-<h1>Web scraper</h1>
+<header class="hero"><h1>Web scraper</h1>
+<p>Turn any company domain into marketing signals: tech stack, hiring and activity.</p></header>
+<main>
+<section class="card">
 <h2>Single company</h2>
 <form id="f"><input id="url" name="url" placeholder="claramap.com or https://example.com" size="50">
 <button id="go">Scrape</button></form>
 <p id="status"></p>
 <div id="result" hidden></div>
+</section>
+<section class="card">
 <h2>Batch</h2>
 <form id="bf"><textarea id="batch" rows="6" cols="50" placeholder="One domain or URL per line (max 500)"></textarea><br>
 <label>or CSV (first column) <input type="file" id="csv" accept=".csv,text/csv,text/plain"></label>
@@ -34,6 +60,8 @@ table{border-collapse:collapse;width:100%} td,th{border:1px solid #ccc;padding:.
 <p id="batch-status"></p>
 <table id="batch-table" hidden><thead><tr><th>Domain</th><th>Status</th><th>Name</th><th>Tech</th>
 <th>Hiring</th><th>Latest post</th></tr></thead><tbody></tbody></table>
+</section>
+</main>
 <script>
 const $ = (id) => document.getElementById(id);
 const headers = () => ({'Content-Type': 'application/json'});

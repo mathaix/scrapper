@@ -41,6 +41,13 @@ def test_user_scrapes_single_and_batch(site):  # noqa: F811
             ctx = b.new_context(record_video_dir=demo) if demo else b.new_context()
             page = ctx.new_page()
             page.goto(f"http://127.0.0.1:{port}/")
+            # landing page is styled: gradient hero, card sections, styled button
+            assert page.inner_text(".hero h1") == "Web scraper"
+            assert "linear-gradient" in page.eval_on_selector(".hero", "e => getComputedStyle(e).backgroundImage")
+            assert page.locator("section.card").count() == 2
+            assert page.eval_on_selector("#go", "e => getComputedStyle(e).backgroundImage").startswith("linear-gradient")
+            if demo:
+                page.screenshot(path=os.path.join(demo, "landing.png"))
             page.fill("#url", site + "/")
             page.click("#go")
             page.wait_for_function("document.getElementById('status').textContent.includes('Saved')")
