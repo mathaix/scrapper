@@ -1,5 +1,7 @@
 # Signals
 
+<p align="center"><img src="docs/assets/logo.svg" alt="Signals logo" width="320"></p>
+
 Signals is a rules-based collector of marketing signals. You send it company websites or event pages, and it
 builds a queryable Supabase database of companies, people and events. That data feeds target lists, timing
 triggers and event-led outreach.
